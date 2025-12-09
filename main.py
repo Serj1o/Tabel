@@ -1,3 +1,13 @@
+import sys
+import traceback
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    print("❌ Необработанная ошибка:")
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
 import os
 import json
 import gspread
@@ -39,10 +49,3 @@ menu = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-
-def handle_exception(exc_type, exc_value, exc_traceback):
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    print("❌ Необработанная ошибка:")
-    traceback.print_exception(exc_type, exc_value, exc_traceback)

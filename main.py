@@ -3,7 +3,7 @@ import sys
 import json
 import traceback
 from datetime import datetime
-import zoneinfo
+import zoneinfo 
 
 import gspread
 from gspread.exceptions import WorksheetNotFound
@@ -14,7 +14,6 @@ from aiogram.enums import ContentType
 from aiogram.client.default import DefaultBotProperties
 
 
-# === 1. Проверка обязательных переменных окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS_RAW = os.getenv("GOOGLE_CREDENTIALS")
@@ -35,7 +34,6 @@ if missing_vars:
 print("✅ Переменные окружения загружены")
 
 
-# === 2. Инициализация Google Sheets ===
 try:
     print("📂 Парсим учётные данные Google...")
     creds = json.loads(GOOGLE_CREDENTIALS_RAW)
@@ -47,7 +45,6 @@ try:
     sh = gc.open_by_key(SHEET_ID)
     print(f"✅ Таблица '{sh.title}' успешно открыта")
 
-    # Попытка получить или создать лист TimeLog
     try:
         log = sh.worksheet("TimeLog")
         print("✅ Лист 'TimeLog' найден")
@@ -66,13 +63,11 @@ except Exception as e:
     sys.exit(1)
 
 
-# === 3. Инициализация Telegram-бота ===
 try:
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
-    user_actions = {}  # Хранение состояния: IN/OUT
+    user_actions = {}  
 
-    # === Клавиатуры (aiogram 3 синтаксис) ===
     menu = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работы")],
@@ -87,7 +82,6 @@ except Exception as e:
     sys.exit(1)
 
 
-# === 4. Хэндлеры ===
 
 @dp.message(F.text == "/start")
 async def start(message: Message):
@@ -102,10 +96,12 @@ async def start(message: Message):
 @dp.message(F.text.in_(["Пришёл на работу", "Ушёл с работы"]))
 async def choose_action(message: Message):
     uid = message.from_user.id
-    action = "IN" if "Пришёл" in message.text else "OUT"
-    user_actions[uid] = action
-
-    text = "Отправь геолокацию для прихода" if action == "IN" else "Отправь геолокацию для ухода"
+    if "Пришёл" in message.text:
+        user_actions[uid] = "Пришёл"
+        text = "Отправь геолокацию для прихода"
+    else:
+        user_actions[uid] = "Ушёл"
+        text = "Отправь геолокацию для ухода"
 
     kb = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Отправить геолокацию", request_location=True)]],
@@ -115,42 +111,42 @@ async def choose_action(message: Message):
 
 
 @dp.message(F.content_type == ContentType.LOCATION)
-@dp.message(F.content_type == ContentType.LOCATION)
 async def handle_location(message: Message):
     uid = message.from_user.id
-    action = user_actions.get(uid, "IN")
-    action_text = "Пришёл" if action == "IN" else "Ушёл"
+    action = user_actions.get(uid, "Пришёл") 
 
     lat = message.location.latitude
     lon = message.location.longitude
-    map_link = f"https://maps.google.com/?q={lat},{lon}"
-    
-    # Московское время
+
+
+    yandex_map_link = f"https://yandex.ru/maps/?ll={lon},{lat}&z=18"
+
+
     moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
     now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         log.append_row([
             now, uid, message.from_user.full_name,
-            action, lat, lon, map_link
+            action, lat, lon, yandex_map_link
         ])
-        print(f"✅ Запись добавлена: {action_text} — {now} — {message.from_user.full_name}")
+        print(f"✅ Запись добавлена: {action} — {now} — {message.from_user.full_name}")
     except Exception as e:
         print(f"❌ Ошибка записи в Google Sheets: {e}")
         await message.answer("⚠️ Не удалось сохранить запись. Обратитесь к администратору.")
         return
 
     await message.answer(
-        f"{action_text} зафиксирован ✅\n"
+        f"{action} зафиксирован ✅\n"
         f"{now}\n"
-        f"{map_link}",
+        f"<a href='{yandex_map_link}'>📍 Открыть на Яндекс.Картах</a>",
         reply_markup=menu
     )
 
 
-# === 5. Запуск бота ===
+
 async def main():
-    print("🚀 Запуск бота в режиме polling...")
+    print("🚀 Бот запущен и ожидает сообщения...")
     await dp.start_polling(bot)
 
 

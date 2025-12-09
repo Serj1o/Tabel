@@ -119,8 +119,8 @@ async def handle_location(message: Message):
     lon = message.location.longitude
 
 
-    yandex_map_link = f"https://yandex.ru/maps/?ll={lon},{lat}&z=18"
-
+    yandex_map_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=18"
+    google_map_link = f"https://maps.google.com/?q={lat},{lon}"
 
     moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
     now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -130,6 +130,7 @@ async def handle_location(message: Message):
             now, uid, message.from_user.full_name,
             action, #lat, lon, 
             yandex_map_link
+            
         ])
         print(f"✅ Запись добавлена: {action} — {now} — {message.from_user.full_name}")
     except Exception as e:

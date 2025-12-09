@@ -114,6 +114,7 @@ async def choose_action(message: Message):
 
 
 @dp.message(F.content_type == ContentType.LOCATION)
+@dp.message(F.content_type == ContentType.LOCATION)
 async def handle_location(message: Message):
     uid = message.from_user.id
     action = user_actions.get(uid, "IN")
@@ -122,7 +123,10 @@ async def handle_location(message: Message):
     lat = message.location.latitude
     lon = message.location.longitude
     map_link = f"https://maps.google.com/?q={lat},{lon}"
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Московское время
+    moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
+    now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         log.append_row([

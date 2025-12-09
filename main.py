@@ -139,7 +139,7 @@ async def handle_location(message: Message):
         return
 
     await message.answer(
-        f"{action} зафиксирован ✅\n"
+        f"{action}, зафиксировано ✅\n"
         f"{now}\n"
         f"<a href='{yandex_map_link}'>📍 Открыть на Яндекс.Картах</a>",
         reply_markup=menu

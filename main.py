@@ -21,7 +21,7 @@ try:
     creds = json.loads(GOOGLE_CREDENTIALS_RAW)
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key(SHEET_ID)
-    log = sh.worksheet("TimeLog")
+    log = sh.worksheet("TabelBot")
 except Exception as e:
     raise SystemExit(f"Ошибка подключения к Google Sheets: {e}")
 

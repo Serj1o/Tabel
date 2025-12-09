@@ -1,50 +1,62 @@
-# main.py
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-import asyncio
+# main.py — можно смело выкладывать на GitHub
+import os
+import json
 import gspread
 from datetime import datetime
-import os
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-bot = Bot(token=os.getenv("8466358439:AAEIZ1Z4VwkPwttt9gQ-48thzIHxyHKuKEk"))
-dp = Dispatcher(bot)
+# ──────── НИКАКИХ СЕКРЕТОВ В КОДЕ! ────────
+BOT_TOKEN = os.getenv("BOT_TOKEN")          # берётся только из переменных окружения
+SHEET_ID = os.getenv("SHEET_ID")            # ID таблицы тоже снаружи
 
-# Google Sheets
-gc = gspread.service_account(filename="credentials.json")  # положи свой JSON-ключ
-sh = gc.open_by_key("17Ix88c8HjYPXU5XxU8-wLW_zxE5MF3Bm7zRHp3ujrew")
+# Google Sheets — безопасно везде (Railway, Render, VPS, локально)
+if os.getenv("GOOGLE_CREDENTIALS"):
+    # Для продакшена (Railway и т.д.)
+    gc = gspread.service_account_from_dict(json.loads(os.getenv("GOOGLE_CREDENTIALS")))
+else:
+    # Для локального запуска (если хочешь)
+    gc = gspread.service_account(filename="credentials.json")
+
+sh = gc.open_by_key(SHEET_ID)
 log = sh.worksheet("TimeLog")
-employees = sh.worksheet("Employees")
 
-# Клавиатура с геолокацией
-geo_btn = KeyboardButton("Отправить геолокацию", request_location=True)
-menu = ReplyKeyboardMarkup(resize_keyboard=True).add("Пришёл", "Ушёл").add(geo_btn)
+# Клавиатура
+menu = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+menu.add("Пришёл на работу", "Ушёл с работы")
+menu.add(KeyboardButton("Отправить геолокацию", request_location=True))
 
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
     await message.answer(
-        "Привет! Это бот учёта времени с геолокацией.\n"
-        "Нажми «Пришёл» или «Ушёл» и отправь геолокацию",
+        "Привет! Бот учёта рабочего времени с геолокацией\n"
+        "Нажми кнопку → отправь геолокацию",
         reply_markup=menu
     )
 
-@dp.message_handler(content_types=['location'])
+@dp.message_handler(content_types=["location"])
 async def handle_location(message: types.Message):
     lat = message.location.latitude
     lon = message.location.longitude
     map_link = f"https://maps.google.com/?q={lat},{lon}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Последнее действие пользователя
-    last_msg = message.text if message.text else ""
-    action = "IN" if "Пришёл" in last_msg else "OUT"
+    # Определяем действие по последнему текстовому сообщению пользователя
+    recent_text = message.text or ""
+    action = "IN" if "Пришёл" in recent_text else "OUT"
+    action_text = "Пришёл" if action == "IN" else "Ушёл"
 
-    log.append_row([now, message.from_user.id, message.from_user.full_name, action, lat, lon, map_link])
-    await message.answer(f"Зафиксировано: {action} ✅\n{now}")
+    log.append_row([now, message.from_user.id, message.from_user.full_name,
+                    action, lat, lon, map_link])
 
-@dp.message_handler(lambda m: m.text in ["Пришёл", "Ушёл"])
-async def checkin_checkout(message: types.Message):
-    action = "приход" if message.text == "Пришёл" else "уход"
-    await message.answer(f"Отлично, теперь отправь геолокацию для {action}a", reply_markup=ReplyKeyboardMarkup().add(geo_btn))
+    await message.answer(f"{action_text} зафиксирован ✅\n{now}\n{map_link}")
+
+@dp.message_handler(lambda m: m.text in ["Пришёл на работу", "Ушёл с работы"])
+async def request_location(message: types.Message):
+    action = "приход" if "Пришёл" in message.text else "уход"
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton("Отправить геолокацию", request_location=True))
+    await message.answer(f"Отправь геолокацию для {action}a", reply_markup=kb)
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)

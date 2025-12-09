@@ -128,7 +128,8 @@ async def handle_location(message: Message):
     try:
         log.append_row([
             now, uid, message.from_user.full_name,
-            action, lat, lon, yandex_map_link
+            action, #lat, lon, 
+            yandex_map_link
         ])
         print(f"✅ Запись добавлена: {action} — {now} — {message.from_user.full_name}")
     except Exception as e:

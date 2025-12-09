@@ -19,31 +19,21 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS_RAW = os.getenv("GOOGLE_CREDENTIALS")
 
-# ID руководителей (можно несколько)
-ADMIN_USER_IDS = {467500951}  # ← замени на свой ID
+ADMIN_USER_IDS = {8466358439}  # ← замени на свой ID
 
-# Список сотрудников: {user_id: "Имя"}
 KNOWN_EMPLOYEES = {
-    467500951: "Сергей (руководитель)",
+    8466358439: "Сергей (руководитель)",
     123456789: "Иван Петров",
     987654321: "Мария Сидорова",
-    # Добавь сюда всех, кто должен отмечаться
+    # Добавь сотрудников
 }
 
-# === 2. Проверка переменных окружения ===
-missing_vars = []
-for var_name, var_value in [
-    ("BOT_TOKEN", BOT_TOKEN),
-    ("SHEET_ID", SHEET_ID),
-    ("GOOGLE_CREDENTIALS", GOOGLE_CREDENTIALS_RAW),
-]:
-    if not var_value:
-        missing_vars.append(var_name)
 
+# === 2. Проверка переменных ===
+missing_vars = [v for v in ["BOT_TOKEN", "SHEET_ID", "GOOGLE_CREDENTIALS"] if not os.getenv(v)]
 if missing_vars:
-    print(f"❌ ОШИБКА: Не заданы переменные: {', '.join(missing_vars)}")
+    print(f"❌ Не заданы переменные: {', '.join(missing_vars)}")
     sys.exit(1)
-print("✅ Переменные окружения загружены")
 
 
 # === 3. Google Sheets ===
@@ -54,22 +44,21 @@ try:
     try:
         log = sh.worksheet("TimeLog")
     except WorksheetNotFound:
-        log = sh.add_worksheet(title="TimeLog", rows="1000", cols="7")
-        log.append_row(["Дата/время", "User ID", "Имя", "Действие", "Широта", "Долгота", "Карта"])
-    print("✅ Google Sheets готовы")
+        log = sh.add_worksheet(title="TimeLog", rows="1000", cols="5")
+        log.append_row(["Дата/время", "User ID", "Имя", "Действие", "Карта"])
+    print("✅ Sheets готовы")
 except Exception as e:
-    print(f"❌ Ошибка Sheets: {e}")
-    traceback.print_exc()
+    print(f"❌ Sheets ошибка: {e}")
     sys.exit(1)
 
 
-# === 4. Telegram бот ===
+# === 4. Бот ===
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 user_actions = {}
 
 
-# === 5. Меню и хэндлеры ===
+# === 5. Хэндлеры ===
 
 @dp.message(F.text == "/start")
 async def start(message: Message):
@@ -78,8 +67,7 @@ async def start(message: Message):
         admin_menu = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📊 Отчёт: кто пришёл/ушёл")],
-                [KeyboardButton(text="⚠️ Кто не отметился")],
-                [KeyboardButton(text="↩️ Назад к обычному меню")]
+                [KeyboardButton(text="⚠️ Кто не отметился")]
             ],
             resize_keyboard=True
         )
@@ -118,44 +106,34 @@ async def handle_location(message: Message):
     action = user_actions.get(uid, "Пришёл")
     lat = message.location.latitude
     lon = message.location.longitude
-    yandex_map_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=18"
+
+    # 🔗 Яндекс.Карты с маркером
+    yandex_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=18"
 
     moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
     now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        log.append_row([now, uid, message.from_user.full_name, action, yandex_map_link])
+        # Сохраняем БЕЗ широты и долготы
+        log.append_row([now, uid, message.from_user.full_name, action, yandex_link])
         print(f"✅ {action} — {message.from_user.full_name} — {now}")
     except Exception as e:
         print(f"❌ Ошибка записи: {e}")
         await message.answer("⚠️ Не удалось сохранить запись.")
         return
 
-    menu = ReplyKeyboardMarkup(
+    # Возвращаем обычное меню (без кнопки "назад")
+    user_menu = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работы")],
+            [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работу")],
             [KeyboardButton(text="Отправить геолокацию", request_location=True)]
         ],
         resize_keyboard=True
     )
     await message.answer(
-        f"{action} зафиксирован ✅\n{now}\n<a href='{google_map_link}'>📍 В Google Maps</a>",
-        reply_markup=menu
+        f"{action} зафиксирован ✅\n{now}\n<a href='{yandex_link}'>📍 Открыть в Яндекс.Картах</a>",
+        reply_markup=user_menu
     )
-
-
-@dp.message(F.text == "↩️ Назад к обычному меню")
-async def back_to_user(message: Message):
-    if message.from_user.id not in ADMIN_USER_IDS:
-        return
-    user_menu = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работы")],
-            [KeyboardButton(text="Отправить геолокацию", request_location=True)]
-        ],
-        resize_keyboard=True
-    )
-    await message.answer("Режим сотрудника активирован.", reply_markup=user_menu)
 
 
 @dp.message(F.text == "📊 Отчёт: кто пришёл/ушёл")
@@ -175,20 +153,33 @@ async def report_attendance(message: Message):
             await message.answer("📭 Сегодня никто не отметился.")
             return
 
-        user_events = {}
-        for r in today_records:
-            uid = r.get("User ID")
-            name = r.get("Имя", f"ID {uid}")
-            action = r.get("Действие", "—")
-            time_str = r.get("Дата/время", "")[-8:]
-            if uid not in user_events:
-                user_events[uid] = {"name": name, "actions": []}
-            user_events[uid]["actions"].append(f"{action} в {time_str}")
+        # Разделяем на "Пришёл" и "Ушёл"
+        came = []
+        left = []
 
-        lines = ["<b>✅ Отмеченные сегодня:</b>"]
-        for data in user_events.values():
-            events = "; ".join(data["actions"])
-            lines.append(f"• {data['name']}: {events}")
+        for r in today_records:
+            name = r.get("Имя", "—")
+            action = r.get("Действие", "")
+            time_str = r.get("Дата/время", "")[-8:]  # HH:MM:SS
+
+            if action == "Пришёл":
+                came.append(f"• {name} — {time_str}")
+            elif action == "Ушёл":
+                left.append(f"• {name} — {time_str}")
+
+        lines = ["<b>📅 Отчёт за сегодня:</b>"]
+
+        if came:
+            lines.append("\n<b>🟢 Пришли:</b>")
+            lines.extend(came)
+        else:
+            lines.append("\n<b>🟢 Пришли:</b>\n— Никто не пришёл")
+
+        if left:
+            lines.append("\n<b>🔴 Ушли:</b>")
+            lines.extend(left)
+        else:
+            lines.append("\n<b>🔴 Ушли:</b>\n— Никто не ушёл")
 
         await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -213,13 +204,12 @@ async def report_missing(message: Message):
         missing = []
         for uid, name in KNOWN_EMPLOYEES.items():
             if str(uid) not in today_uids:
-                missing.append(f"• {name} (ID: {uid})")
+                missing.append(f"• {name}")
 
         if not missing:
-            await message.answer("🎉 Все отметились!")
+            await message.answer("🎉 Все сотрудники отметились сегодня!")
         else:
             lines = ["<b>❌ Не отметились сегодня:</b>"] + missing
-            lines.append("\nℹ️ Используйте ID для поиска в таблице.")
             await message.answer("\n".join(lines), parse_mode="HTML")
 
     except Exception as e:
@@ -237,9 +227,6 @@ if __name__ == "__main__":
     try:
         import asyncio
         asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n⚠️ Остановка...")
     except Exception as e:
-        print(f"🔴 Критическая ошибка: {e}")
-        traceback.print_exc()
+        print(f"🔴 Ошибка: {e}")
         sys.exit(1)

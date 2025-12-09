@@ -1,40 +1,34 @@
 import os
 import json
 import gspread
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.enums import ContentType
-from aiogram.client.default import DefaultBotProperties
-from datetime import datetime
+import traceback  # ← добавь это
 
-# === Проверка переменных окружения ===
+# ... другие импорты ...
+
+# === Проверка переменных ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS_RAW = os.getenv("GOOGLE_CREDENTIALS")
 
 if not all([BOT_TOKEN, SHEET_ID, GOOGLE_CREDENTIALS_RAW]):
     missing = [v for v in ["BOT_TOKEN", "SHEET_ID", "GOOGLE_CREDENTIALS"] if not os.getenv(v)]
-    raise EnvironmentError(f"Не заданы переменные окружения: {', '.join(missing)}")
+    raise SystemExit(f"Не заданы переменные: {missing}")
 
-# === Инициализация Google Sheets ===
+# === Подключение к Google Sheets с ПОЛНЫМ логом ошибки ===
 try:
     creds = json.loads(GOOGLE_CREDENTIALS_RAW)
     gc = gspread.service_account_from_dict(creds)
+    print(f"✅ Авторизовались в Google с аккаунтом: {creds.get('client_email')}")
+    
+    print(f"📂 Открываем таблицу с ID: {SHEET_ID}")
     sh = gc.open_by_key(SHEET_ID)
-    log = sh.worksheet("TabelBot")
+    print(f"✅ Успешно открыта таблица: {sh.title}")
+    
+    print("📄 Ищем лист 'TimeLog'...")
+    log = sh.worksheet("TimeLog")
+    print("✅ Лист 'TimeLog' найден")
+
 except Exception as e:
-    raise SystemExit(f"Ошибка подключения к Google Sheets: {e}")
-
-# === Инициализация бота ===
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
-user_actions = {}
-
-# === Клавиатуры (aiogram 3) ===
-menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работы")],
-        [KeyboardButton(text="Отправить геолокацию", request_location=True)]
-    ],
-    resize_keyboard=True
-)
+    print("🔴 ПОЛНАЯ ОШИБКА ПОДКЛЮЧЕНИЯ К GOOGLE SHEETS:")
+    traceback.print_exc()  # ← ЭТО ПОКАЖЕТ НАСТОЯЩУЮ ПРИЧИНУ
+    raise SystemExit("Не удалось инициализировать Google Sheets")

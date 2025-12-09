@@ -24,7 +24,7 @@ ADMIN_USER_IDS = {467500951}  # ← замени на свой ID
 
 # Список сотрудников: {user_id: "Имя"}
 KNOWN_EMPLOYEES = {
-    8466358439: "Сергей (руководитель)",
+    467500951: "Сергей (руководитель)",
     123456789: "Иван Петров",
     987654321: "Мария Сидорова",
     # Добавь сюда всех, кто должен отмечаться
@@ -118,13 +118,13 @@ async def handle_location(message: Message):
     action = user_actions.get(uid, "Пришёл")
     lat = message.location.latitude
     lon = message.location.longitude
-    google_map_link = f"https://maps.google.com/?q={lat},{lon}"
+    yandex_map_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=18"
 
     moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
     now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        log.append_row([now, uid, message.from_user.full_name, action, lat, lon, google_map_link])
+        log.append_row([now, uid, message.from_user.full_name, action, yandex_map_link])
         print(f"✅ {action} — {message.from_user.full_name} — {now}")
     except Exception as e:
         print(f"❌ Ошибка записи: {e}")

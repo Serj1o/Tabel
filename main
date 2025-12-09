@@ -1,0 +1,50 @@
+# main.py
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+import gspread
+from datetime import datetime
+import os
+
+bot = Bot(token=os.getenv("BOT_TOKEN"))
+dp = Dispatcher(bot)
+
+# Google Sheets
+gc = gspread.service_account(filename="credentials.json")  # положи свой JSON-ключ
+sh = gc.open_by_key("ЗДЕСЬ_ID_ТАБЛИЦЫ")
+log = sh.worksheet("TimeLog")
+employees = sh.worksheet("Employees")
+
+# Клавиатура с геолокацией
+geo_btn = KeyboardButton("Отправить геолокацию", request_location=True)
+menu = ReplyKeyboardMarkup(resize_keyboard=True).add("Пришёл", "Ушёл").add(geo_btn)
+
+@dp.message_handler(commands=["start"])
+async def start(message: types.Message):
+    await message.answer(
+        "Привет! Это бот учёта времени с геолокацией.\n"
+        "Нажми «Пришёл» или «Ушёл» и отправь геолокацию",
+        reply_markup=menu
+    )
+
+@dp.message_handler(content_types=['location'])
+async def handle_location(message: types.Message):
+    lat = message.location.latitude
+    lon = message.location.longitude
+    map_link = f"https://maps.google.com/?q={lat},{lon}"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Последнее действие пользователя
+    last_msg = message.text if message.text else ""
+    action = "IN" if "Пришёл" in last_msg else "OUT"
+
+    log.append_row([now, message.from_user.id, message.from_user.full_name, action, lat, lon, map_link])
+    await message.answer(f"Зафиксировано: {action} ✅\n{now}")
+
+@dp.message_handler(lambda m: m.text in ["Пришёл", "Ушёл"])
+async def checkin_checkout(message: types.Message):
+    action = "приход" if message.text == "Пришёл" else "уход"
+    await message.answer(f"Отлично, теперь отправь геолокацию для {action}a", reply_markup=ReplyKeyboardMarkup().add(geo_btn))
+
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)

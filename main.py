@@ -7,6 +7,7 @@ from aiogram.enums import ContentType
 from aiogram.client.default import DefaultBotProperties
 from datetime import datetime
 
+sys.excepthook = handle_exception
 # === Проверка переменных окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_ID = os.getenv("SHEET_ID")
@@ -38,3 +39,10 @@ menu = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    print("❌ Необработанная ошибка:")
+    traceback.print_exception(exc_type, exc_value, exc_traceback)

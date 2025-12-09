@@ -6,12 +6,12 @@ import gspread
 from datetime import datetime
 import os
 
-bot = Bot(token=os.getenv("BOT_TOKEN"))
+bot = Bot(token=os.getenv("8466358439:AAEIZ1Z4VwkPwttt9gQ-48thzIHxyHKuKEk"))
 dp = Dispatcher(bot)
 
 # Google Sheets
 gc = gspread.service_account(filename="credentials.json")  # положи свой JSON-ключ
-sh = gc.open_by_key("ЗДЕСЬ_ID_ТАБЛИЦЫ")
+sh = gc.open_by_key("17Ix88c8HjYPXU5XxU8-wLW_zxE5MF3Bm7zRHp3ujrew")
 log = sh.worksheet("TimeLog")
 employees = sh.worksheet("Employees")
 

@@ -1,4 +1,4 @@
-# main.py — можно смело выкладывать на GitHub
+# main.py
 import os
 import json
 import gspread
@@ -10,7 +10,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 BOT_TOKEN = os.getenv("BOT_TOKEN")          # берётся только из переменных окружения
 SHEET_ID = os.getenv("SHEET_ID")            # ID таблицы тоже снаружи
 
-# Google Sheets — безопасно везде (Railway, Render, VPS, локально)
+# Google Sheets
 if os.getenv("GOOGLE_CREDENTIALS"):
     # Для продакшена (Railway и т.д.)
     gc = gspread.service_account_from_dict(json.loads(os.getenv("GOOGLE_CREDENTIALS")))

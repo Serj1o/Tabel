@@ -177,7 +177,7 @@ async def handle_location(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        f"{action} на участке <b>{site}</b>, зафиксировано ✅\n{now}",
+        f"{action}, <b>{site}</b>, зафиксировано ✅\n{now}",
         parse_mode="HTML",
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="➕ Новое действие")]],
@@ -187,7 +187,7 @@ async def handle_location(message: Message, state: FSMContext):
     await state.clear()
 
 
-@dp.message(F.text == "➕ Новое действие")
+@dp.message(F.text == "Новое действие")
 async def new_action(message: Message, state: FSMContext):
     await state.clear()
     await start(message, state)
@@ -289,3 +289,4 @@ if __name__ == "__main__":
         print(f"Критическая ошибка: {e}")
         traceback.print_exc()
         sys.exit(1)
+

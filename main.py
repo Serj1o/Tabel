@@ -20,12 +20,12 @@ SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS_RAW = os.getenv("GOOGLE_CREDENTIALS")
 
 # Заменить Telegram ID (@userinfobot)
-ADMIN_USER_IDS = {}
+ADMIN_USER_IDS = {653474435}
 
 # Список сотрудников: {user_id: "Имя"}
 KNOWN_EMPLOYEES = {
     467500951: "Хорошенин Сергей",
-
+    653474435: "Рашидов Михаил"
     # Добавить остальных
 }
 

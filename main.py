@@ -180,7 +180,7 @@ async def handle_location(message: Message, state: FSMContext):
         f"{action}, <b>{site}</b>, зафиксировано ✅\n{now}",
         parse_mode="HTML",
         reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="➕ Новое действие")]],
+            keyboard=[[KeyboardButton(text="Новое действие")]],
             resize_keyboard=True
         )
     )

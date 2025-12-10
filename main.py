@@ -12,6 +12,9 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums import ContentType
 from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
 
 
 # === 1. Настройки ===
@@ -28,6 +31,8 @@ KNOWN_EMPLOYEES = {
     653474435: "Рашидов Михаил"
     # Добавить остальных
 }
+
+SITES = ["Мичуринский", "Рязанский", "Зеленая Роща", "Калчуга"]
 
 
 # === 2. Проверка переменных окружения ===
@@ -47,9 +52,13 @@ try:
     sh = gc.open_by_key(SHEET_ID)
     try:
         log = sh.worksheet("TimeLog")
+        headers = log.row_values(1)
+        if "Участок" not in headers:
+            log.update_cell(1, len(headers) + 1, "Участок")
+            print("Добавлен столбец 'Участок'")
     except WorksheetNotFound:
-        log = sh.add_worksheet(title="TimeLog", rows="1000", cols="5")
-        log.append_row(["Дата/время", "User ID", "Имя", "Действие", "Карта"])
+        log = sh.add_worksheet(title="TimeLog", rows="1000", cols="6")
+        log.append_row(["Дата/время", "User ID", "Имя", "Действие", "Карта", "Участок"])
     print("Google Sheets готовы")
 except Exception as e:
     print(f"Ошибка Sheets: {e}")
@@ -57,16 +66,38 @@ except Exception as e:
     sys.exit(1)
 
 
-# === 4. Инициализация бота ===
+# === 4. Инициализация бота и FSM ===
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
-user_actions = {}
+dp = Dispatcher(storage=MemoryStorage())
 
-# Общее меню для сотрудников
-USER_MENU = ReplyKeyboardMarkup(
+# Состояния
+class WorkStates(StatesGroup):
+    choosing_site = State()
+    choosing_action = State()
+    awaiting_location = State()
+
+# Кнопки
+BACK_BUTTON = KeyboardButton(text="↩️ Назад")
+
+SITE_KEYBOARD = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=site)] for site in SITES
+    ] + [[BACK_BUTTON]],
+    resize_keyboard=True
+)
+
+ACTION_KEYBOARD = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Пришёл на работу"), KeyboardButton(text="Ушёл с работы")],
-        [KeyboardButton(text="Отправить геолокацию", request_location=True)]
+        [BACK_BUTTON]
+    ],
+    resize_keyboard=True
+)
+
+LOCATION_KEYBOARD = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Отправить геолокацию", request_location=True)],
+        [BACK_BUTTON]
     ],
     resize_keyboard=True
 )
@@ -75,7 +106,7 @@ USER_MENU = ReplyKeyboardMarkup(
 # === 5. Хэндлеры ===
 
 @dp.message(F.text == "/start")
-async def start(message: Message):
+async def start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if user_id in ADMIN_USER_IDS:
         admin_menu = ReplyKeyboardMarkup(
@@ -87,30 +118,46 @@ async def start(message: Message):
         )
         await message.answer("Панель руководителя:", reply_markup=admin_menu)
     else:
-        await message.answer(
-            "Привет! Бот учёта рабочего времени.\n"
-            "Выберите действие и отправьте геолокацию",
-            reply_markup=USER_MENU
-        )
+        await state.set_state(WorkStates.choosing_site)
+        await message.answer("Выберите участок:", reply_markup=SITE_KEYBOARD)
 
 
-@dp.message(F.text.in_(["Пришёл на работу", "Ушёл с работы"]))
-async def choose_action(message: Message):
+@dp.message(F.text == "↩️ Назад")
+async def go_back(message: Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state == WorkStates.choosing_action.state:
+        await state.set_state(WorkStates.choosing_site)
+        await message.answer("Выберите участок:", reply_markup=SITE_KEYBOARD)
+    elif current_state == WorkStates.awaiting_location.state:
+        await state.set_state(WorkStates.choosing_action)
+        await message.answer("Выберите действие:", reply_markup=ACTION_KEYBOARD)
+    else:
+        # На выборе участка — просто повторить
+        await message.answer("Выберите участок:", reply_markup=SITE_KEYBOARD)
+
+
+@dp.message(WorkStates.choosing_site, F.text.in_(SITES))
+async def site_chosen(message: Message, state: FSMContext):
+    await state.update_data(chosen_site=message.text)
+    await state.set_state(WorkStates.choosing_action)
+    await message.answer("Выберите действие:", reply_markup=ACTION_KEYBOARD)
+
+
+@dp.message(WorkStates.choosing_action, F.text.in_(["Пришёл на работу", "Ушёл с работы"]))
+async def action_chosen(message: Message, state: FSMContext):
+    action = "Пришёл" if "Пришёл" in message.text else "Ушёл"
+    await state.update_data(action=action)
+    await state.set_state(WorkStates.awaiting_location)
+    await message.answer("Отправьте геолокацию для подтверждения", reply_markup=LOCATION_KEYBOARD)
+
+
+@dp.message(WorkStates.awaiting_location, F.content_type == ContentType.LOCATION)
+async def handle_location(message: Message, state: FSMContext):
     uid = message.from_user.id
-    user_actions[uid] = "Пришёл" if "Пришёл" in message.text else "Ушёл"
-    text = "Отправьте геолокацию для подтверждения" if user_actions[uid] == "Пришёл" else "Отправьте геолокацию для подтверждения"
+    data = await state.get_data()
+    action = data.get("action", "Пришёл")
+    site = data.get("chosen_site", "Не указан")
 
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Отправить геолокацию", request_location=True)]],
-        resize_keyboard=True
-    )
-    await message.answer(text, reply_markup=kb)
-
-
-@dp.message(F.content_type == ContentType.LOCATION)
-async def handle_location(message: Message):
-    uid = message.from_user.id
-    action = user_actions.get(uid, "Пришёл")
     lat = message.location.latitude
     lon = message.location.longitude
     yandex_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=18"
@@ -118,22 +165,32 @@ async def handle_location(message: Message):
     moscow_tz = zoneinfo.ZoneInfo("Europe/Moscow")
     now = datetime.now(moscow_tz).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 🔹 Используем имя из KNOWN_EMPLOYEES, если оно есть
     telegram_name = message.from_user.full_name
-    canonical_name = KNOWN_EMPLOYEES.get(uid, telegram_name)  # если нет — берём из Telegram
+    canonical_name = KNOWN_EMPLOYEES.get(uid, telegram_name)
 
     try:
-        log.append_row([now, uid, canonical_name, action, yandex_link])
-        print(f"{action} — {canonical_name} — {now}")
+        log.append_row([now, uid, canonical_name, action, yandex_link, site])
+        print(f"{action} — {canonical_name} — {site} — {now}")
     except Exception as e:
         print(f"Ошибка записи: {e}")
         await message.answer("Не удалось сохранить запись.")
         return
 
     await message.answer(
-        f"{action}, зафиксировано ✅\n{now}\n",
-        reply_markup=USER_MENU
+        f"{action} на участке <b>{site}</b>, зафиксировано ✅\n{now}",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="➕ Новое действие")]],
+            resize_keyboard=True
+        )
     )
+    await state.clear()
+
+
+@dp.message(F.text == "➕ Новое действие")
+async def new_action(message: Message, state: FSMContext):
+    await state.clear()
+    await start(message, state)
 
 
 @dp.message(F.text == "Отчёт: кто пришёл/ушёл")
@@ -159,7 +216,8 @@ async def report_attendance(message: Message):
             name = r.get("Имя", "—")
             action = r.get("Действие", "")
             time_str = r.get("Дата/время", "")[-8:]  # HH:MM:SS
-            line = f"• {name} — {time_str}"
+            site = r.get("Участок", "")
+            line = f"• {name} ({site}) — {time_str}"
             if action == "Пришёл":
                 came.append(line)
             elif action == "Ушёл":

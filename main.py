@@ -3,6 +3,7 @@ import sys
 import json
 import traceback
 import math
+import logging
 from datetime import datetime, timedelta
 import zoneinfo
 import gspread
@@ -21,6 +22,22 @@ SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS_RAW = os.getenv("GOOGLE_CREDENTIALS")
 
 ADMIN_USER_IDS = {653474435}  # Добавь других админов через запятую
+def parse_admin_ids(raw_ids: str | None) -> set[int]:
+    if not raw_ids:
+        return set()
+    ids: set[int] = set()
+    for part in raw_ids.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            logging.warning("Игнорирую некорректный tg_id администратора: %s", part)
+    return ids
+
+
+ADMIN_USER_IDS = parse_admin_ids(os.getenv("ADMIN_USER_IDS")) or {653474435}
 KNOWN_EMPLOYEES = {
     467500951: "Хорошенин Сергей",
     653474435: "Рашидов Михаил",
@@ -28,6 +45,18 @@ KNOWN_EMPLOYEES = {
 }
 
 SITES = ["Мичуринский", "Рязанский", "Зеленая Роща", "Калчуга"]
+
+BACKUP_DIR = "backups"
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(os.path.join(BACKUP_DIR, "bot.log"), encoding="utf-8"),
+    ],
+)
 
 # === 2. Проверка переменных ===
 missing = [v for v in ["BOT_TOKEN", "SHEET_ID", "GOOGLE_CREDENTIALS"] if not os.getenv(v)]
@@ -72,6 +101,26 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+
+def backup_spreadsheet():
+    tz = zoneinfo.ZoneInfo("Europe/Moscow")
+    timestamp = datetime.now(tz).strftime("%Y%m%d-%H%M%S")
+    backup_files: list[str] = []
+
+    for ws in sh.worksheets():
+        try:
+            values = ws.get_all_values()
+            safe_title = ws.title.replace("/", "-")
+            filename = os.path.join(BACKUP_DIR, f"{timestamp}-{safe_title}.json")
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(values, f, ensure_ascii=False, indent=2)
+            backup_files.append(filename)
+        except Exception as exc:  # noqa: BLE001
+            logging.error("Ошибка бэкапа листа %s: %s", ws.title, exc)
+
+    logging.info("Создан бэкап таблицы: %s", ", ".join(backup_files))
+    return backup_files
+
 # === 4. Бот ===
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
@@ -104,16 +153,32 @@ async def show_site_selection(message: Message, state: FSMContext):
     await state.set_state(WorkStates.choosing_site)
     await message.answer("Выберите объект:", reply_markup=SITE_KEYBOARD)
 
+
+def is_admin(user_id: int) -> bool:
+    if user_id in ADMIN_USER_IDS:
+        return True
+    logging.warning("Запрет не-админу user_id=%s", user_id)
+    return False
+
+
+def log_action(user_id: int, action: str, details: str | None = None) -> None:
+    extra = f"; {details}" if details else ""
+    logging.info("user_id=%s: %s%s", user_id, action, extra)
+
 # === 6. Хэндлеры ===
 @dp.message(F.text == "/start")
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     if message.from_user.id in ADMIN_USER_IDS:
+    log_action(message.from_user.id, "Команда /start")
+    if is_admin(message.from_user.id):
         admin_kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="Отчёт: кто пришёл/ушёл")],
                 [KeyboardButton(text="Кто не отметился")],
                 [KeyboardButton(text="Рассчитать вчерашний день")]
+                [KeyboardButton(text="Рассчитать вчерашний день")],
+                [KeyboardButton(text="Сделать бэкап")]
             ],
             resize_keyboard=True
         )
@@ -123,6 +188,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @dp.message(F.text == "↩️ Назад")
 async def back_handler(message: Message, state: FSMContext):
+    log_action(message.from_user.id, "Нажата кнопка Назад")
     current = await state.get_state()
     if current == WorkStates.awaiting_location.state:
         await state.set_state(WorkStates.choosing_action)
@@ -134,12 +200,14 @@ async def back_handler(message: Message, state: FSMContext):
 
 @dp.message(WorkStates.choosing_site, F.text.in_(SITES))
 async def site_selected(message: Message, state: FSMContext):
+    log_action(message.from_user.id, "Выбор объекта", message.text)
     await state.update_data(site=message.text)
     await state.set_state(WorkStates.choosing_action)
     await message.answer("Выберите действие:", reply_markup=ACTION_KEYBOARD)
 
 @dp.message(WorkStates.choosing_action, F.text.in_({"Пришёл на работу", "Ушёл с работы"}))
 async def action_selected(message: Message, state: FSMContext):
+    log_action(message.from_user.id, "Выбор действия", message.text)
     action = "Пришёл" if "Пришёл" in message.text else "Ушёл"
     await state.update_data(action=action)
     await state.set_state(WorkStates.awaiting_location)
@@ -161,8 +229,11 @@ async def location_received(message: Message, state: FSMContext):
     user_id = message.from_user.id
     name = KNOWN_EMPLOYEES.get(user_id, message.from_user.full_name)
 
+    log_action(user_id, "Получена геолокация", f"{action} — {site}")
+
     try:
         log.append_row([timestamp, user_id, name, action, map_link, site])
+        logging.info("Записана отметка %s для %s (%s)", action, name, site)
     except Exception as e:
         await message.answer("Ошибка записи в лог.")
         print(e)
@@ -177,6 +248,7 @@ async def location_received(message: Message, state: FSMContext):
 
 @dp.message(F.text == "Новое действие")
 async def new_action(message: Message, state: FSMContext):
+    log_action(message.from_user.id, "Новое действие")
     await state.clear()
     await cmd_start(message, state)
 
@@ -184,7 +256,9 @@ async def new_action(message: Message, state: FSMContext):
 @dp.message(F.text == "Рассчитать вчерашний день")
 async def calculate_yesterday(message: Message):
     if message.from_user.id not in ADMIN_USER_IDS:
+    if not is_admin(message.from_user.id):
         return await message.answer("Доступ запрещён.")
+    log_action(message.from_user.id, "Запрос расчёта за вчера")
 
     tz = zoneinfo.ZoneInfo("Europe/Moscow")
     target_date = (datetime.now(tz) - timedelta(days=1)).date()  # ВЧЕРА
@@ -210,36 +284,7 @@ async def calculate_yesterday(message: Message):
             dt_str = r.get("Дата/время")
             if not all([name, site, action, dt_str]): continue
             try:
-                dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-            except:
-                continue
-            sessions[name].append({"site": site, "action": action, "dt": dt})
-
-        updated = 0
-        for name, entries in sessions.items():
-            entries.sort(key=lambda x: x["dt"])
-            total_minutes = 0
-            start = None
-            used_site = None
-
-            for e in entries:
-                if e["action"] == "Пришёл":
-                    start = e["dt"]
-                    used_site = e["site"]
-                elif e["action"] == "Ушёл" and start:
-                    total_minutes += (e["dt"] - start).total_seconds() / 60
-                    start = None
-
-            if total_minutes <= 30:  # меньше 30 минут — игнорируем
-                continue
-
-            hours = min(math.ceil(total_minutes / 60), 8)
-
-            # Находим лист
-            sheet = site_worksheets.get(used_site)
-            if not sheet:
-                continue
-
+@@ -243,52 +313,76 @@ async def calculate_yesterday(message: Message):
             # Ищем строку по фамилии или ФИО
             try:
                 cell = sheet.find(name.split()[-1]) or sheet.find(name)
@@ -265,19 +310,45 @@ async def calculate_yesterday(message: Message):
         traceback.print_exc()
         await message.answer("Ошибка при расчёте.")
 
+
+@dp.message(F.text == "Сделать бэкап")
+async def handle_backup(message: Message):
+    if not is_admin(message.from_user.id):
+        return await message.answer("Доступ запрещён.")
+
+    log_action(message.from_user.id, "Запрос бэкапа")
+    await message.answer("Делаю резервную копию таблицы...")
+
+    try:
+        backup_files = backup_spreadsheet()
+        if backup_files:
+            await message.answer("Бэкап готов. Файлы сохранены локально на сервере.")
+        else:
+            await message.answer("Не удалось создать бэкап: нет доступных листов.")
+    except Exception as exc:  # noqa: BLE001
+        logging.error("Ошибка бэкапа: %s", exc)
+        await message.answer("Ошибка при создании бэкапа.")
+
 # Отчёты (по желанию оставь)
 @dp.message(F.text == "Отчёт: кто пришёл/ушёл")
 async def report_today(message: Message):
     if message.from_user.id not in ADMIN_USER_IDS: return
+    if not is_admin(message.from_user.id):
+        return await message.answer("Доступ запрещён.")
+    log_action(message.from_user.id, "Отчёт кто пришёл/ушёл")
     # (можно оставить старую реализацию)
 
 @dp.message(F.text == "Кто не отметился")
 async def missing_today(message: Message):
     if message.from_user.id not in ADMIN_USER_IDS: return
+    if not is_admin(message.from_user.id):
+        return await message.answer("Доступ запрещён.")
+    log_action(message.from_user.id, "Отчёт кто не отметился")
     # (можно оставить)
 
 @dp.message()
 async def unknown(message: Message, state: FSMContext):
+    log_action(message.from_user.id, "Неизвестное сообщение", message.text or message.content_type)
     current = await state.get_state()
     if current:
         await message.answer("Пожалуйста, используйте кнопки.")

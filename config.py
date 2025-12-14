@@ -1,20 +1,16 @@
+# config.py
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
+
     BASE_URL: str
     WEBHOOK_SECRET: str
-    DATABASE_URL: str
-    TZ: str = "Europe/Moscow"
 
-    SMTP_HOST: str | None = None
-    SMTP_PORT: int = 465
-    SMTP_USER: str | None = None
-    SMTP_PASS: str | None = None
-    REPORT_EMAILS: str | None = None  # comma-separated
+    DATABASE_URL: str
 
     class Config:
         env_file = ".env"
-        extra = "ignore"
+        env_file_encoding = "utf-8"
 
 settings = Settings()

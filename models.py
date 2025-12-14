@@ -1,7 +1,7 @@
 import datetime as dt
 from sqlalchemy import String, Integer, Boolean, Date, DateTime, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .db import Base
+from db import Base
 
 class Employee(Base):
     __tablename__ = "employees"

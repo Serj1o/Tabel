@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Request, Header, HTTPException
 from aiogram.types import Update
-from .bot import dp, bot
-from .config import settings
-from .db import engine, Base
-from .scheduler import create_scheduler
+from bot import dp, bot
+from config import settings
+from db import engine, Base
+from scheduler import create_scheduler
 
 app = FastAPI()
 

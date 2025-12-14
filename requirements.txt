@@ -1,10 +1,13 @@
 aiogram==3.13.1
 fastapi==0.115.6
 uvicorn==0.32.1
+
 SQLAlchemy==2.0.36
 psycopg[binary]==3.2.3
-pydantic==2.10.3
+
+pydantic==2.9.2
 pydantic-settings==2.6.1
+
 APScheduler==3.10.4
 openpyxl==3.1.5
 python-multipart==0.0.20

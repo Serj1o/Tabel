@@ -2,13 +2,13 @@ import datetime as dt
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
-from .db import SessionLocal
-from .models import Employee, Attendance
-from .config import settings
-from .bot import bot_send_message
-from .excel import write_day_mark
+from db import SessionLocal
+from models import Employee, Attendance
+from config import settings
+from bot import bot_send_message
+from excel import write_day_mark
 from pathlib import Path
-from .mailer import send_file
+from mailer import send_file
 
 WORKBOOK_PATH = Path("/app/data/timesheet_2025.xlsx")  # в Railway примонтируем volume
 

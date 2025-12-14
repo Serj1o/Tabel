@@ -1,7 +1,7 @@
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
-from .config import settings
+from config import settings
 
 def send_file(subject: str, body: str, file_path: Path) -> None:
     if not (settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASS and settings.REPORT_EMAILS):

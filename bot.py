@@ -4,11 +4,11 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.filters import CommandStart
 from sqlalchemy import select
-from .config import settings
-from .db import SessionLocal
-from .models import Employee, Invite, ObjectSite, Attendance
-from .geo import haversine_m
-from .excel import ensure_year_workbook, write_day_mark
+from config import settings
+from db import SessionLocal
+from models import Employee, Invite, ObjectSite, Attendance
+from geo import haversine_m
+from excel import ensure_year_workbook, write_day_mark
 from pathlib import Path
 
 bot = Bot(token=settings.BOT_TOKEN)
